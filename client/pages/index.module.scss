@@ -1,0 +1,13 @@
+.back {
+    div, svg {
+        transition: all .3s ease;
+    }
+}
+.back:hover {
+    div {
+        scale: 1 !important;
+    }
+    svg {
+        stroke: #fff !important
+    }
+}
