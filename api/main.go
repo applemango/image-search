@@ -15,6 +15,8 @@ import (
 	"github.com/weaviate/weaviate-go-client/v4/weaviate"
 	"github.com/weaviate/weaviate-go-client/v4/weaviate/graphql"
 	"github.com/weaviate/weaviate/entities/models"
+
+	"github.com/AlecAivazis/survey/v2"
 )
 
 func DeleteClass(ctx context.Context, client *weaviate.Client) error {
@@ -48,14 +50,13 @@ func CreateClass(ctx context.Context, client *weaviate.Client) error {
 	return client.Schema().ClassCreator().WithClass(multiModal).Do(ctx)
 }
 
-func ImportObjects(ctx context.Context, client *weaviate.Client) error {
-	basePath := "./img"
+func ImportObjects(ctx context.Context, client *weaviate.Client, basePath string) error {
 	files, err := ioutil.ReadDir(basePath)
 	if err != nil {
 		return err
 	}
 
-	for _, f := range files {
+	for i, f := range files {
 		data, err := ioutil.ReadFile(fmt.Sprintf("%s/%s", basePath, f.Name()))
 		if err != nil {
 			return err
@@ -77,6 +78,7 @@ func ImportObjects(ctx context.Context, client *weaviate.Client) error {
 		if len(resp) != 1 {
 			return errors.New("not all objects imported")
 		}
+		fmt.Printf("%d/%d %v\n", i, len(files), f.Name())
 	}
 
 	return nil
@@ -110,6 +112,71 @@ func SearchImage(ctx context.Context, client *weaviate.Client, img string) ([16]
 	return images, nil
 }
 
+func AskBool(msg string) bool {
+	bool := false
+	prompt := &survey.Confirm{
+		Message: msg,
+	}
+	survey.AskOne(prompt, &bool)
+	return bool
+}
+
+func AskStr(msg string) string {
+	str := ""
+	prompt := &survey.Input{
+		Message: msg,
+	}
+	survey.AskOne(prompt, &str)
+	return str
+}
+
+func AskFilePath() string {
+	path := AskStr("Path to images: ")
+	files, err := ioutil.ReadDir(path)
+	if err != nil {
+		println(err.Error())
+		return AskFilePath()
+	}
+	for i, f := range files {
+		if i > 9 {
+			break
+		}
+		println(i, f.Name())
+	}
+	isContinue := AskBool("Continue?")
+	if !isContinue {
+		return AskFilePath()
+	}
+	return path
+}
+
+func __init__(ctx context.Context, client *weaviate.Client) {
+	isReset := AskBool("Reset database?")
+	if isReset {
+		if err := DeleteClass(ctx, client); err != nil {
+			println(err.Error())
+			isContinue := AskBool("Continue?")
+			if !isContinue {
+				return
+			}
+		}
+		if err := CreateClass(ctx, client); err != nil {
+			println(err.Error())
+			panic(err)
+		}
+		isImportImages := AskBool("Import images?")
+		if isImportImages {
+			path := AskFilePath()
+			println(path)
+			println("Import objects")
+			if err := ImportObjects(ctx, client, path); err != nil {
+				panic(err)
+			}
+			println("Successfully imported objects")
+		}
+	}
+}
+
 func main() {
 	ctx := context.Background()
 
@@ -118,6 +185,8 @@ func main() {
 		Scheme: "http",
 	}
 	client := weaviate.New(cfg)
+
+	__init__(ctx, client)
 
 	app := gin.Default()
 	app.Use(cors.Default())
